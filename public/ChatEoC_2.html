@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Widget</title>
+    <style>
+        /* 基本重置和字體設定 */
+        :root {
+            --primary-color: #0052d4; /* 參考 DWH 網站的藍色調 */
+            --secondary-color: #f4f6f8;
+            --text-color: #333;
+            --widget-width: 370px;
+            --widget-height: 70vh;
+            --widget-mobile-width: calc(100% - 20px);
+            --widget-mobile-height: calc(100% - 80px);
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: transparent; /* iframe 背景透明 */
+        }
+
+        /* 聊天啟動按鈕 */
+        #chat-launcher {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 60px;
+            height: 60px;
+            background-color: var(--primary-color);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+            z-index: 9998;
+        }
+
+        #chat-launcher:hover {
+            transform: scale(1.1);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+        }
+
+        #chat-launcher svg {
+            width: 32px;
+            height: 32px;
+            color: white;
+            transition: opacity 0.2s, transform 0.2s;
+        }
+        
+        #chat-launcher .icon-close {
+            display: none;
+        }
+
+        /* 聊天視窗容器 */
+        #chat-widget-container {
+            position: fixed;
+            bottom: 90px;
+            right: 20px;
+            width: var(--widget-width);
+            height: var(--widget-height);
+            max-height: 600px;
+            background-color: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            transform: scale(0.95) translateY(20px);
+            opacity: 0;
+            visibility: hidden;
+            transition: transform 0.3s ease-out, opacity 0.3s ease-out, visibility 0.3s;
+            z-index: 9999;
+        }
+
+        #chat-widget-container.open {
+            transform: scale(1) translateY(0);
+            opacity: 1;
+            visibility: visible;
+        }
+
+        /* 聊天視窗頭部 */
+        .chat-header {
+            background: var(--primary-color);
+            color: white;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        .chat-header h3 {
+            margin: 0;
+            font-size: 1.1em;
+        }
+
+        .chat-header .close-btn {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+        }
+
+        /* 訊息區域 */
+        #chat-messages {
+            flex-grow: 1;
+            padding: 20px;
+            overflow-y: auto;
+            background-color: var(--secondary-color);
+        }
+
+        .message {
+            display: flex;
+            margin-bottom: 15px;
+            max-width: 85%;
+        }
+
+        .message-content {
+            padding: 10px 15px;
+            border-radius: 18px;
+            line-height: 1.5;
+        }
+
+        .message.user {
+            margin-left: auto;
+            flex-direction: row-reverse;
+        }
+
+        .message.user .message-content {
+            background-color: var(--primary-color);
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+
+        .message.bot {
+            margin-right: auto;
+        }
+
+        .message.bot .message-content {
+            background-color: #fff;
+            color: var(--text-color);
+            border: 1px solid #e5e5e5;
+            border-bottom-left-radius: 4px;
+        }
+        
+        .message.typing .message-content {
+            display: flex;
+            align-items: center;
+        }
+
+        .typing-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #aaa;
+            margin: 0 2px;
+            animation: typing-blink 1.4s infinite both;
+        }
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes typing-blink {
+            0% { opacity: 0.2; }
+            20% { opacity: 1; }
+            100% { opacity: 0.2; }
+        }
+
+        /* 輸入區域 */
+        #chat-form {
+            display: flex;
+            padding: 15px;
+            border-top: 1px solid #e0e0e0;
+            background-color: white;
+            flex-shrink: 0;
+        }
+
+        #chat-input {
+            flex-grow: 1;
+            border: 1px solid #ccc;
+            border-radius: 20px;
+            padding: 10px 15px;
+            font-size: 1em;
+            margin-right: 10px;
+            transition: border-color 0.2s;
+        }
+
+        #chat-input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
+        #send-btn {
+            background-color: var(--primary-color);
+            border: none;
+            border-radius: 50%;
+            width: 44px;
+            height: 44px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        #send-btn:hover {
+            background-color: #003da5;
+        }
+
+        #send-btn svg {
+            width: 20px;
+            height: 20px;
+            color: white;
+        }
+        
+        /* 響應式設計 for Mobile */
+        @media (max-width: 480px) {
+            #chat-widget-container {
+                width: var(--widget-mobile-width);
+                height: var(--widget-mobile-height);
+                max-height: none;
+                bottom: 70px;
+                right: 10px;
+            }
+            #chat-launcher {
+                bottom: 10px;
+                right: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 聊天啟動按鈕 -->
+    <div id="chat-launcher">
+        <svg class="icon-chat" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M21.99 4c0-1.1-.89-2-1.99-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4-.01-18zM18 14H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/></svg>
+        <svg class="icon-close" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/></svg>
+    </div>
+
+    <!-- 聊天視窗 -->
+    <div id="chat-widget-container">
+        <div class="chat-header">
+            <h3>智能助理</h3>
+            <button class="close-btn" aria-label="關閉聊天室">&times;</button>
+        </div>
+        <div id="chat-messages">
+            <!-- 歡迎訊息 -->
+            <div class="message bot">
+                <div class="message-content">
+                    您好！請問有什麼可以幫助您？
+                </div>
+            </div>
+        </div>
+        <form id="chat-form">
+            <input type="text" id="chat-input" placeholder="請在這裡輸入訊息..." autocomplete="off">
+            <button type="submit" id="send-btn" aria-label="傳送">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2 .01 7z"/></svg>
+            </button>
+        </form>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // =================================================================
+            // === 重要：請將此處的 URL 替換為您自己的 Vercel API 地址 ===
+            // =================================================================
+            const API_URL = 'https://chatec-backend.vercel.app/api/chat';
+            // 例如: const API_URL = 'https://my-chat-app-alpha.vercel.app/api/chat';
+            // =================================================================
+
+            const launcher = document.getElementById('chat-launcher');
+            const widgetContainer = document.getElementById('chat-widget-container');
+            const closeBtn = widgetContainer.querySelector('.close-btn');
+            const chatForm = document.getElementById('chat-form');
+            const chatInput = document.getElementById('chat-input');
+            const chatMessages = document.getElementById('chat-messages');
+            const iconChat = launcher.querySelector('.icon-chat');
+            const iconClose = launcher.querySelector('.icon-close');
+
+            // 開關聊天視窗
+            function toggleWidget() {
+                widgetContainer.classList.toggle('open');
+                const isOpen = widgetContainer.classList.contains('open');
+                iconChat.style.display = isOpen ? 'none' : 'block';
+                iconClose.style.display = isOpen ? 'block' : 'none';
+                if (isOpen) {
+                    chatInput.focus();
+                }
+            }
+
+            launcher.addEventListener('click', toggleWidget);
+            closeBtn.addEventListener('click', toggleWidget);
+
+            // 處理表單提交
+            chatForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const messageText = chatInput.value.trim();
+                if (!messageText) return;
+
+                addMessage(messageText, 'user');
+                chatInput.value = '';
+                showTypingIndicator();
+
+                try {
+                    // 檢查 API_URL 是否已更新
+                    if (API_URL.includes('your-vercel-project-name')) {
+                         throw new Error("開發者提示：請在 JavaScript 程式碼中更新 API_URL 變數！");
+                    }
+
+                    const response = await fetch(API_URL, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ message: messageText }),
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`伺服器錯誤: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    removeTypingIndicator();
+                    addMessage(data.reply, 'bot');
+
+                } catch (error) {
+                    console.error('API 請求失敗:', error);
+                    removeTypingIndicator();
+                    addMessage(`抱歉，目前無法連接到服務器。錯誤訊息：${error.message}`, 'bot');
+                }
+            });
+
+            // 將訊息添加到聊天記錄中
+            function addMessage(text, type) {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message ${type}`;
+                
+                const contentDiv = document.createElement('div');
+                contentDiv.className = 'message-content';
+                contentDiv.textContent = text;
+                
+                messageDiv.appendChild(contentDiv);
+                chatMessages.appendChild(messageDiv);
+                
+                // 自動滾動到底部
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+
+            // 顯示「輸入中」的動畫
+            function showTypingIndicator() {
+                const typingDiv = document.createElement('div');
+                typingDiv.className = 'message bot typing';
+                typingDiv.innerHTML = `
+                    <div class="message-content">
+                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div>
+                    </div>
+                `;
+                chatMessages.appendChild(typingDiv);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+
+            // 移除「輸入中」的動畫
+            function removeTypingIndicator() {
+                const typingIndicator = chatMessages.querySelector('.message.typing');
+                if (typingIndicator) {
+                    typingIndicator.remove();
+                }
+            }
+        });
+    </script>
+</body>
+</html>
