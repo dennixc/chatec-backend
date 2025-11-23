@@ -1,0 +1,9 @@
+# 專案依賴
+node_modules
+
+# 環境變數檔案
+.env
+.env.local
+
+# Vercel 本地開發資料夾
+.vercel
