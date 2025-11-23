@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 聊天助理</title>
+    <style>
+        /* --- 全局和基本樣式 --- */
+        :root {
+            --background-color: #f7f7f8;
+            --chat-background-color: #ffffff;
+            --user-message-bg: #dcf8c6;
+            --ai-message-bg: #f1f0f0;
+            --input-area-bg: #ffffff;
+            --text-color: #202123;
+            --border-color: #e5e5e5;
+            --button-color: #4CAF50;
+            --button-hover-color: #45a049;
+        }
+
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+        }
+
+        /* --- 主要聊天容器佈局 --- */
+        .chat-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh; /* vh 單位確保容器佔滿整個視窗高度 */
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: var(--chat-background-color);
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.05);
+        }
+
+        /* --- 訊息列表 --- */
+        .message-list {
+            flex-grow: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        /* --- 單一訊息樣式 --- */
+        .message {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            max-width: 85%;
+        }
+
+        .message-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background-color: var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            flex-shrink: 0;
+            font-size: 14px;
+        }
+
+        .message-bubble {
+            padding: 12px 16px;
+            border-radius: 18px;
+            word-wrap: break-word;
+            white-space: pre-wrap; /* 保持換行符 */
+            line-height: 1.5;
+        }
+
+        /* 使用者訊息樣式 */
+        .user-message {
+            align-self: flex-end;
+            flex-direction: row-reverse;
+        }
+
+        .user-message .message-bubble {
+            background-color: var(--user-message-bg);
+            border-top-right-radius: 4px;
+        }
+        
+        .user-message .message-avatar {
+            background-color: #94e1ff;
+        }
+
+        /* AI 訊息樣式 */
+        .ai-message {
+            align-self: flex-start;
+        }
+
+        .ai-message .message-bubble {
+            background-color: var(--ai-message-bg);
+            border-top-left-radius: 4px;
+        }
+
+        .ai-message .message-avatar {
+            background-color: #d1c4e9;
+        }
+
+        /* --- 輸入區域 --- */
+        .chat-form {
+            display: flex;
+            align-items: center;
+            padding: 15px;
+            border-top: 1px solid var(--border-color);
+            background-color: var(--input-area-bg);
+        }
+
+        #message-input {
+            flex-grow: 1;
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 10px 18px;
+            font-size: 16px;
+            resize: none; /* 禁止用戶手動調整大小 */
+            max-height: 100px; /* 限制最大高度 */
+            overflow-y: auto;
+            line-height: 1.4;
+        }
+
+        #message-input:focus {
+            outline: none;
+            border-color: var(--button-color);
+            box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
+        }
+
+        #send-button {
+            background-color: var(--button-color);
+            border: none;
+            border-radius: 50%;
+            width: 44px;
+            height: 44px;
+            margin-left: 10px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s;
+            flex-shrink: 0;
+        }
+
+        #send-button:hover {
+            background-color: var(--button-hover-color);
+        }
+
+        #send-button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        
+        #send-button svg {
+            width: 24px;
+            height: 24px;
+            fill: white;
+        }
+
+        /* --- 讀取中動畫 --- */
+        .loading-dots span {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #888;
+            animation: loading-bounce 1.4s infinite ease-in-out both;
+        }
+
+        .loading-dots span:nth-child(1) { animation-delay: -0.32s; }
+        .loading-dots span:nth-child(2) { animation-delay: -0.16s; }
+
+        @keyframes loading-bounce {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1.0); }
+        }
+
+        /* --- 響應式設計：針對手機等窄螢幕 --- */
+        @media (max-width: 600px) {
+            .chat-container {
+                box-shadow: none;
+                border-radius: 0;
+            }
+            .message-list {
+                padding: 10px;
+            }
+            .chat-form {
+                padding: 10px;
+            }
+            .message {
+                max-width: 90%;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="chat-container">
+        <div class="message-list" id="message-list">
+            <!-- 歡迎訊息 -->
+            <div class="message ai-message">
+                <div class="message-avatar">AI</div>
+                <div class="message-bubble">
+                    您好！我是您的 AI 助理，有什麼可以幫助您的嗎？
+                </div>
+            </div>
+        </div>
+        <form class="chat-form" id="chat-form">
+            <textarea id="message-input" placeholder="在這裡輸入訊息... (Shift + Enter 換行)" rows="1"></textarea>
+            <button id="send-button" type="submit" title="發送">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
+            </button>
+        </form>
+    </div>
+
+    <script>
+        // --- DOM 元素獲取 ---
+        const chatForm = document.getElementById('chat-form');
+        const messageInput = document.getElementById('message-input');
+        const messageList = document.getElementById('message-list');
+        const sendButton = document.getElementById('send-button');
+
+        // --- API 設定 ---
+        // 從您的 Vercel 專案儀表板複製的後端 API URL
+        const API_URL = 'https://chatec-backend.vercel.app/api/chat';
+
+        // --- 事件監聽 ---
+
+        // 監聽表單提交事件
+        chatForm.addEventListener('submit', handleFormSubmit);
+
+        // 監聽輸入框的按鍵事件，實現 Enter 發送，Shift+Enter 換行
+        messageInput.addEventListener('keydown', handleKeydown);
+
+        // 監聽輸入框內容變化，自動調整高度
+        messageInput.addEventListener('input', autoResizeTextarea);
+
+        // --- 核心函式 ---
+
+        /**
+         * 處理表單提交
+         * @param {Event} event - 提交事件對象
+         */
+        async function handleFormSubmit(event) {
+            event.preventDefault(); // 防止頁面重新載入
+            
+            const userInput = messageInput.value.trim();
+            if (!userInput) return; // 如果沒有輸入內容，則不執行任何操作
+
+            // 1. 在介面上顯示使用者的訊息
+            displayMessage(userInput, 'user');
+            
+            // 2. 清空輸入框並重置高度
+            messageInput.value = '';
+            autoResizeTextarea();
+            
+            // 3. 禁用輸入框和按鈕，防止重複發送
+            setFormDisabled(true);
+
+            // 4. 顯示 AI 正在思考的動畫
+            const loadingElement = displayLoadingIndicator();
+
+            try {
+                // 5. 發送請求到後端 API
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    // 確保 body 的格式與您的後端 API 期望的一致
+                    body: JSON.stringify({ message: userInput }),
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP 錯誤！狀態碼: ${response.status}`);
+                }
+
+                const data = await response.json();
+                
+                // 6. 用真實的 AI 回覆更新 "正在思考" 的訊息
+                updateMessage(loadingElement, data.reply || "抱歉，我沒有得到有效的回覆。");
+
+            } catch (error) {
+                console.error('與 API 通訊時發生錯誤:', error);
+                // 7. 如果出錯，更新 "正在思考" 的訊息為錯誤提示
+                updateMessage(loadingElement, "抱歉，發生了網路錯誤，請稍後再試。");
+            } finally {
+                // 8. 無論成功或失敗，都重新啟用輸入框和按鈕
+                setFormDisabled(false);
+            }
+        }
+
+        /**
+         * 在聊天視窗中顯示一條新訊息
+         * @param {string} text - 訊息內容
+         * @param {'user' | 'ai'} sender - 發送者 ('user' 或 'ai')
+         * @returns {HTMLElement} - 創建的訊息元素
+         */
+        function displayMessage(text, sender) {
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('message', `${sender}-message`);
+
+            const avatar = document.createElement('div');
+            avatar.classList.add('message-avatar');
+            avatar.textContent = sender === 'user' ? '您' : 'AI';
+
+            const bubble = document.createElement('div');
+            bubble.classList.add('message-bubble');
+            bubble.textContent = text;
+
+            messageElement.appendChild(avatar);
+            messageElement.appendChild(bubble);
+            
+            messageList.appendChild(messageElement);
+            scrollToBottom();
+            return messageElement;
+        }
+
+        /**
+         * 顯示 AI 正在思考的讀取動畫
+         * @returns {HTMLElement} - 創建的訊息元素
+         */
+        function displayLoadingIndicator() {
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('message', 'ai-message');
+
+            const avatar = document.createElement('div');
+            avatar.classList.add('message-avatar');
+            avatar.textContent = 'AI';
+
+            const bubble = document.createElement('div');
+            bubble.classList.add('message-bubble');
+            bubble.innerHTML = `
+                <div class="loading-dots">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            `;
+
+            messageElement.appendChild(avatar);
+            messageElement.appendChild(bubble);
+            
+            messageList.appendChild(messageElement);
+            scrollToBottom();
+            return messageElement;
+        }
+
+        /**
+         * 更新已存在的訊息內容 (用於將 "正在思考" 替換為真實回覆)
+         * @param {HTMLElement} messageElement - 要更新的訊息元素
+         * @param {string} newText - 新的訊息文字
+         */
+        function updateMessage(messageElement, newText) {
+            const bubble = messageElement.querySelector('.message-bubble');
+            if (bubble) {
+                bubble.innerHTML = ''; // 清空 loading dots
+                bubble.textContent = newText;
+            }
+            scrollToBottom();
+        }
+
+        /**
+         * 將聊天視窗滾動到最底部
+         */
+        function scrollToBottom() {
+            messageList.scrollTop = messageList.scrollHeight;
+        }
+
+        /**
+         * 處理鍵盤按下事件
+         * @param {KeyboardEvent} event 
+         */
+        function handleKeydown(event) {
+            // 如果按下 Enter 且沒有同時按住 Shift
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault(); // 阻止預設的換行行為
+                chatForm.requestSubmit(); // 以程式碼方式觸發表單提交
+            }
+        }
+
+        /**
+         * 啟用或禁用輸入表單
+         * @param {boolean} disabled - 是否要禁用
+         */
+        function setFormDisabled(disabled) {
+            messageInput.disabled = disabled;
+            sendButton.disabled = disabled;
+        }
+
+        /**
+         * 根據內容自動調整 textarea 的高度
+         */
+        function autoResizeTextarea() {
+            messageInput.style.height = 'auto'; // 先重置高度
+            messageInput.style.height = `${messageInput.scrollHeight}px`; // 設置為內容所需的高度
+        }
+
+        // 頁面載入時，自動調整一次以防有預設值
+        autoResizeTextarea();
+    </script>
+
+</body>
+</html>
