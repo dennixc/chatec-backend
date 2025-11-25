@@ -1,68 +1,83 @@
-// /api/chat.js (串流版本，適用於 Vercel Edge Function，允許所有來源)
+// /api/chat.js
 
+// 導入 OpenAI SDK
 import OpenAI from 'openai';
-import { OpenAIStream, StreamingTextResponse } from 'ai';
 
-// 指定此函式在 Edge Runtime 上運行，這對於串流至關重要
-export const runtime = 'edge';
+// 這是 Vercel 的配置，告訴 Vercel 這個函數需要使用 Edge Runtime。
+// Edge Runtime 對於處理串流（streaming）有更好的性能和支援。
+export const config = {
+  runtime: 'edge',
+};
 
-const poeClient = new OpenAI({
-  apiKey: process.env.POE_API_KEY,
-  baseURL: 'https://api.poe.com/v1',
+// 創建 OpenAI 客戶端實例
+// 它會自動從 Vercel 的環境變數中讀取 OPENAI_API_KEY
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
+// API 路由的主要處理函數
 export default async function handler(req) {
-  
-  // --- CORS 處理 (Edge Function 版本) ---
-  // 處理瀏覽器發送的 "預檢" (preflight) 請求
-  if (req.method === 'OPTIONS') {
-    return new Response(null, {
-      status: 204,
+  // 只處理 POST 請求
+  if (req.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      status: 405,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  try {
+    // 從請求的 body 中解析出 JSON
+    const { messages } = await req.json();
+
+    // 檢查 messages 是否存在且為陣列
+    if (!messages || !Array.isArray(messages)) {
+      return new Response(JSON.stringify({ error: 'Invalid messages format' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // 向 OpenAI API 發起請求，並啟用串流模式
+    const stream = await openai.chat.completions.create({
+      model: 'gpt-3.5-turbo', // 建議先使用速度較快的 gpt-3.5-turbo
+      messages: messages,
+      stream: true, // 關鍵：啟用串流
+    });
+
+    // 創建一個可讀的串流，將 OpenAI 的回應轉換後傳遞給前端
+    const readableStream = new ReadableStream({
+      async start(controller) {
+        const encoder = new TextEncoder();
+        for await (const chunk of stream) {
+          // 從每個 chunk 中提取內容
+          const content = chunk.choices[0]?.delta?.content || '';
+          if (content) {
+            // 將提取到的內容編碼為 Uint8Array 並放入串流
+            controller.enqueue(encoder.encode(content));
+          }
+        }
+        // 串流結束
+        controller.close();
+      },
+    });
+
+    // 返回串流式回應
+    return new Response(readableStream, {
       headers: {
-        'Access-Control-Allow-Origin': '*', // 允許所有來源
+        'Content-Type': 'text/plain; charset=utf-8',
+        // 加上 CORS 頭部，以防萬一
+        'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type',
       },
     });
+
+  } catch (error) {
+    console.error('Error in API route:', error);
+    // 返回一個詳細的錯誤訊息
+    return new Response(JSON.stringify({ error: 'An internal server error occurred.', details: error.message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
-  // --- CORS 處理結束 ---
-
-  // 確保只處理 POST 請求
-  if (req.method === 'POST') {
-    try {
-      const { message } = await req.json();
-
-      if (!message) {
-        return new Response('Message is required in the request body.', { status: 400 });
-      }
-
-      const origin = req.headers.get('origin') || 'unknown';
-      console.log(`收到來自 ${origin} 的串流請求: "${message}"`);
-
-      // 發起對 Poe API 的串流請求
-      const response = await poeClient.chat.completions.create({
-        model: 'ChatEtoC', // 確保這個名稱與您在 Poe 上的 Bot 名稱完全一致
-        messages: [{ role: 'user', content: message }],
-        stream: true, // 啟用串流
-      });
-
-      // 使用 'ai' SDK 的 OpenAIStream 將 Poe 的回應轉換為前端可讀的流
-      const stream = OpenAIStream(response);
-
-      // 返回一個 StreamingTextResponse，它會自動處理串流格式
-      // 並在這裡再次設定 CORS header 給實際的 POST 回應
-      return new StreamingTextResponse(stream, {
-        headers: {
-          'Access-Control-Allow-Origin': '*', // 允許所有來源
-        },
-      });
-
-    } catch (error) {
-      console.error('與 Poe API 通訊時發生錯誤:', error);
-      return new Response('Failed to communicate with the bot API.', { status: 500 });
-    }
-  }
-
-  // 對於非 POST 和 OPTIONS 的請求
-  return new Response(`Method ${req.method} Not Allowed`, { status: 405, headers: { 'Allow': 'POST, OPTIONS' } });
 }
