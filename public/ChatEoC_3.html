@@ -117,30 +117,6 @@
             border-bottom-left-radius: 4px;
         }
 
-        .typing-indicator {
-            display: flex;
-            align-items: center;
-            padding: 0.75rem 1rem;
-        }
-
-        .typing-indicator span {
-            height: 8px;
-            width: 8px;
-            background-color: #999;
-            border-radius: 50%;
-            display: inline-block;
-            margin: 0 2px;
-            animation: bounce 1.4s infinite ease-in-out both;
-        }
-
-        .typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
-        .typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
-
-        @keyframes bounce {
-            0%, 80%, 100% { transform: scale(0); }
-            40% { transform: scale(1.0); }
-        }
-
         .chat-input-area {
             padding: 1rem;
             border-top: 1px solid var(--input-border);
@@ -203,7 +179,6 @@
         const chatInput = document.getElementById('chat-input');
         const sendButton = document.getElementById('send-button');
 
-        // 用於儲存對話歷史
         let conversationHistory = [];
 
         function addMessage(sender, text) {
@@ -223,13 +198,12 @@
             chatMessages.appendChild(messageEl);
 
             chatMessages.scrollTop = chatMessages.scrollHeight;
-            return contentEl; // 返回內容元素以便後續更新
+            return contentEl;
         }
 
-        function addTypingIndicator() {
+        function createAiMessageContainer() {
             const messageEl = document.createElement('div');
             messageEl.classList.add('message', 'ai');
-            messageEl.id = 'ai-reply-container'; // 給它一個 ID 以便尋找
 
             const avatarEl = document.createElement('div');
             avatarEl.classList.add('avatar');
@@ -238,7 +212,6 @@
             const contentEl = document.createElement('div');
             contentEl.classList.add('message-content');
             
-            // 初始時顯示一個空的內容，之後會被串流內容填充
             const textNode = document.createTextNode('');
             contentEl.appendChild(textNode);
             
@@ -247,7 +220,7 @@
             chatMessages.appendChild(messageEl);
 
             chatMessages.scrollTop = chatMessages.scrollHeight;
-            return contentEl; // 返回內容元素以便填充
+            return contentEl;
         }
 
         async function sendMessage() {
@@ -256,13 +229,11 @@
 
             addMessage('user', userInput);
             chatInput.value = '';
-            chatInput.style.height = 'auto'; // Reset height
+            chatInput.style.height = 'auto';
 
-            // 將用戶訊息加入對話歷史
             conversationHistory.push({ role: "user", content: userInput });
 
-            // 添加一個空的 AI 訊息框，準備接收串流
-            const aiMessageContentEl = addTypingIndicator();
+            const aiMessageContentEl = createAiMessageContainer();
             let fullReply = '';
 
             try {
@@ -274,34 +245,44 @@
                     body: JSON.stringify({ messages: conversationHistory }),
                 });
 
+                // *** 這是修改過的部分：更健壯的錯誤處理 ***
                 if (!response.ok) {
-                    // 如果伺服器回傳錯誤狀態碼 (例如 500)
-                    const errorData = await response.json();
-                    throw new Error(errorData.error || 'API request failed');
+                    // 先將錯誤回應讀取為文字
+                    const errorText = await response.text();
+                    let errorMessage = errorText; // 預設錯誤訊息為原始文字
+
+                    try {
+                        // 嘗試將文字解析為 JSON
+                        const errorData = JSON.parse(errorText);
+                        // 如果成功，使用 JSON 中的詳細訊息
+                        errorMessage = errorData.error || errorData.details || JSON.stringify(errorData);
+                    } catch (e) {
+                        // 如果解析失敗，表示它不是 JSON，我們就直接使用原始的 errorText
+                        console.warn("Error response was not valid JSON:", errorText);
+                    }
+                    // 拋出處理過的錯誤訊息
+                    throw new Error(errorMessage);
                 }
 
-                // *** 處理串流的核心邏輯 ***
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder('utf-8');
                 
                 while (true) {
                     const { done, value } = await reader.read();
                     if (done) {
-                        break; // 串流結束
+                        break;
                     }
-                    // 將收到的 Uint8Array 數據塊解碼為文字
                     const chunk = decoder.decode(value, { stream: true });
                     fullReply += chunk;
-                    // 直接更新 AI 訊息框的內容
                     aiMessageContentEl.textContent = fullReply;
                     chatMessages.scrollTop = chatMessages.scrollHeight;
                 }
 
             } catch (error) {
                 console.error('Fetch error:', error);
+                // 現在這裡顯示的 error.message 會是更準確的錯誤內容
                 aiMessageContentEl.textContent = '抱歉，發生錯誤了：' + error.message;
             } finally {
-                // 當串流結束或發生錯誤後，將完整的 AI 回應加入歷史
                 if(fullReply) {
                     conversationHistory.push({ role: "assistant", content: fullReply });
                 }
@@ -321,11 +302,9 @@
             chatInput.style.height = (chatInput.scrollHeight) + 'px';
         });
 
-        // 初始歡迎訊息
         function showInitialMessage() {
             const welcomeText = "您好！我是您的 AI 助理，有什麼可以幫助您的嗎？";
-            const aiMessageContentEl = addMessage('ai', '');
-            aiMessageContentEl.textContent = welcomeText;
+            addMessage('ai', welcomeText);
             conversationHistory.push({ role: "assistant", content: welcomeText });
         }
 
