@@ -1,81 +1,44 @@
 // /api/chat.js
 
-// 導入 OpenAI SDK
-import OpenAI from 'openai';
+import { OpenAI } from 'openai';
+import { OpenAIStream, StreamingTextResponse } from 'ai';
 
-// 這是 Vercel 的配置，告訴 Vercel 這個函數需要使用 Edge Runtime。
-// Edge Runtime 對於處理串流（streaming）有更好的性能和支援。
-export const config = {
-  runtime: 'edge',
-};
-
-// 創建 OpenAI 客戶端實例
-// 它會自動從 Vercel 的環境變數中讀取 OPENAI_API_KEY
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+// 根據您的 Poe API 範例進行修改
+const client = new OpenAI({
+  apiKey: process.env.POE_API_KEY, // *** 修改 1: 使用新的環境變數名稱 POE_API_KEY
+  baseURL: "https://api.poe.com/v1", // *** 修改 2: 將 baseURL 指向 Poe 的 API
 });
 
-// API 路由的主要處理函數
-export default async function handler(req) {
-  // 只處理 POST 請求
-  if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-      status: 405,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
+export const runtime = 'edge';
 
+export default async function POST(req) {
   try {
-    // 從請求的 body 中解析出 JSON
     const { messages } = await req.json();
 
-    // 檢查 messages 是否存在且為陣列
-    if (!messages || !Array.isArray(messages)) {
-      return new Response(JSON.stringify({ error: 'Invalid messages format' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-
-    // 向 OpenAI API 發起請求，並啟用串流模式
-    const stream = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo', // 建議先使用速度較快的 gpt-3.5-turbo
+    // 向 Poe API 發起請求
+    const response = await client.chat.completions.create({
+      model: 'chatetoc', // *** 修改 3: 使用您指定的 Poe 模型名稱
+      stream: true, // 我們仍然使用串流模式，以獲得打字機效果
       messages: messages,
-      stream: true, // 關鍵：啟用串流
     });
 
-    // 創建一個可讀的串流，將 OpenAI 的回應轉換後傳遞給前端
-    const readableStream = new ReadableStream({
-      async start(controller) {
-        const encoder = new TextEncoder();
-        for await (const chunk of stream) {
-          // 從每個 chunk 中提取內容
-          const content = chunk.choices[0]?.delta?.content || '';
-          if (content) {
-            // 將提取到的內容編碼為 Uint8Array 並放入串流
-            controller.enqueue(encoder.encode(content));
-          }
-        }
-        // 串流結束
-        controller.close();
-      },
-    });
+    // 將回應轉換為前端可以讀取的串流格式
+    const stream = OpenAIStream(response);
 
-    // 返回串流式回應
-    return new Response(readableStream, {
-      headers: {
-        'Content-Type': 'text/plain; charset=utf-8',
-        // 加上 CORS 頭部，以防萬一
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-      },
-    });
+    // 以串流形式返回回應
+    return new StreamingTextResponse(stream);
 
   } catch (error) {
-    console.error('Error in API route:', error);
-    // 返回一個詳細的錯誤訊息
-    return new Response(JSON.stringify({ error: 'An internal server error occurred.', details: error.message }), {
+    // 如果發生錯誤，在 Vercel 後台日誌中打印詳細錯誤
+    console.error("Error in /api/chat:", error);
+
+    // 向前端返回一個更清晰的錯誤訊息
+    // 注意：Poe API 的錯誤物件結構可能與 OpenAI 不同，這裡做一個通用處理
+    const errorMessage = error.response ? await error.response.text() : error.message;
+    return new Response(JSON.stringify({ 
+      error: "Poe API request failed",
+      details: errorMessage
+    }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },
     });
