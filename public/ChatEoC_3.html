@@ -237,7 +237,8 @@
             let fullReply = '';
 
             try {
-                const response = await fetch('https://chatec-backend.vercel.app/api/chat', {
+                // *** 這是唯一的修改：使用相對路徑 ***
+                const response = await fetch('/api/chat', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -245,22 +246,16 @@
                     body: JSON.stringify({ messages: conversationHistory }),
                 });
 
-                // *** 這是修改過的部分：更健壯的錯誤處理 ***
                 if (!response.ok) {
-                    // 先將錯誤回應讀取為文字
                     const errorText = await response.text();
-                    let errorMessage = errorText; // 預設錯誤訊息為原始文字
+                    let errorMessage = errorText;
 
                     try {
-                        // 嘗試將文字解析為 JSON
                         const errorData = JSON.parse(errorText);
-                        // 如果成功，使用 JSON 中的詳細訊息
                         errorMessage = errorData.error || errorData.details || JSON.stringify(errorData);
                     } catch (e) {
-                        // 如果解析失敗，表示它不是 JSON，我們就直接使用原始的 errorText
                         console.warn("Error response was not valid JSON:", errorText);
                     }
-                    // 拋出處理過的錯誤訊息
                     throw new Error(errorMessage);
                 }
 
@@ -280,7 +275,6 @@
 
             } catch (error) {
                 console.error('Fetch error:', error);
-                // 現在這裡顯示的 error.message 會是更準確的錯誤內容
                 aiMessageContentEl.textContent = '抱歉，發生錯誤了：' + error.message;
             } finally {
                 if(fullReply) {
